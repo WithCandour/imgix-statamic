@@ -3,15 +3,28 @@
 namespace Statamic\Addons\Imgix;
 
 use Statamic\Extend\Tags;
-use Imgix\UrlBuilder;
 
 class ImgixTags extends Tags
 {
     private static $html_attributes = array('accesskey', 'align', 'alt', 'border', 'class', 'contenteditable', 'contextmenu', 'dir', 'height', 'hidden', 'id', 'lang', 'longdesc', 'sizes', 'style', 'tabindex', 'title', 'usemap', 'width');
-    protected $builder;
 
-    protected function categorizedAttributes() {
+    /**
+     * @var \Statamic\Addons\Imgix\Imgix
+     */
+    protected $imgix;
+
+    protected function init()
+    {
+        $this->imgix = new Imgix;
+    }
+
+    protected function categorizedAttributes()
+    {
         $attrs = $this->parameters;
+
+        if (!isset($attrs['path'])) {
+            return null;
+        }
 
         $categorized_attrs = array(
             'path' => $attrs['path'],
@@ -21,7 +34,7 @@ class ImgixTags extends Tags
 
         unset($attrs['path']);
 
-        while (list($key, $val) = each($attrs)) {
+        foreach ($attrs as $key => $val) {
             $is_html_attr = in_array($key, self::$html_attributes);
             $is_data_attr = strpos($key, 'data-') === 0;
             $is_aria_attr = strpos($key, 'aria-') === 0;
@@ -36,101 +49,137 @@ class ImgixTags extends Tags
         return $categorized_attrs;
     }
 
-    protected function buildUrl($categorized_attrs) {
-        return $this->builder->createURL(
-            $categorized_attrs['path'],
-            $categorized_attrs['imgix_attributes']
-        );
-    }
-
-    protected function buildHtmlAttributes($categorized_attrs) {
+    protected function buildHtmlAttributes($categorized_attrs)
+    {
         $img_attributes = $categorized_attrs['img_attributes'];
 
         $html = '';
 
-        while (list($key, $val) = each($img_attributes)) {
+        foreach ($img_attributes as $key => $val) {
             $html .= " $key=\"$val\"";
         }
 
         return $html;
     }
 
-    protected function buildSrcset($categorized_attrs) {
-        $srcset_values = array();
-        $resolutions = $this->getConfig('responsive_resolutions', array(1, 2));
-
-        foreach ($resolutions as $resolution) {
-            if ($resolution != 1) {
-                $categorized_attrs['imgix_attributes']['dpr'] = $resolution;
-            }
-
-            $srcset_value = $this->buildUrl($categorized_attrs) . ' ' . $resolution . 'x';
-
-            array_push($srcset_values, $srcset_value);
-        }
-
-        return join(',', $srcset_values);
+    public function index()
+    {
+        return $this->imageUrl();
     }
 
-    function init() {
-        $builder = new UrlBuilder($this->getConfig('source'));
-        $builder->setUseHttps($this->getConfig('use_https', true));
-
-        if ($secureURLToken = $this->getConfig('secure_url_token')) {
-            $builder->setSignKey($secureURLToken);
-        }
-
-        $this->builder = $builder;
-    }
-
-    public function index() {
-        return $this->buildUrl($this->categorizedAttributes());
-    }
-
-    public function imageUrl() {
-        return $this->buildUrl($this->categorizedAttributes());
-    }
-
-    public function imageTag() {
+    public function imageUrl()
+    {
         $categorized_attrs = $this->categorizedAttributes();
+
+        if (empty($categorized_attrs)) {
+            return null;
+        }
+
+        return $this->imgix->buildUrl($categorized_attrs['path'], $categorized_attrs['imgix_attributes']);
+    }
+
+    public function imageTag()
+    {
+        $categorized_attrs = $this->categorizedAttributes();
+
+        if (empty($categorized_attrs)) {
+            return null;
+        }
 
         return join('', array(
             '<img src="',
-                $this->buildUrl($categorized_attrs),
+                $this->imgix->buildUrl($categorized_attrs['path'], $categorized_attrs['imgix_attributes']),
             '" ',
                 $this->buildHtmlAttributes($categorized_attrs),
             '>'
         ));
     }
 
-    public function responsiveImageTag() {
+    public function responsiveImageTag()
+    {
         $categorized_attrs = $this->categorizedAttributes();
+
+        if (empty($categorized_attrs)) {
+            return null;
+        }
 
         return join('', array(
             '<img srcset="',
-                $this->buildSrcset($categorized_attrs),
+                $this->imgix->buildSrcset($categorized_attrs['path'], $categorized_attrs['imgix_attributes']),
             '" src="',
-                $this->buildUrl($categorized_attrs),
+                $this->imgix->buildUrl($categorized_attrs['path'], $categorized_attrs['imgix_attributes']),
             '" ',
                 $this->buildHtmlAttributes($categorized_attrs),
             '>'
         ));
     }
 
-    public function pictureTag() {
+    public function pictureTag()
+    {
         $categorized_attrs = $this->categorizedAttributes();
+
+        if (empty($categorized_attrs)) {
+            return null;
+        }
 
         return join('', array(
             '<picture>',
                 '<source srcset="',
-                    $this->buildSrcset($categorized_attrs),
+                    $this->imgix->buildSrcset($categorized_attrs['path'], $categorized_attrs['imgix_attributes']),
                 '">',
                 '<img src="',
-                    $this->buildUrl($categorized_attrs),
+                    $this->imgix->buildUrl($categorized_attrs['path'], $categorized_attrs['imgix_attributes']),
                 '" ',
                     $this->buildHtmlAttributes($categorized_attrs),
                 '>',
             '</picture>'
+        ));
+    }
+
+    protected function generate_source($min_width, $w, $h)
+    {
+        $path = $this->getParam('path');
+        $standard_image = $this->imgix->buildUrl($path, ['w' => $w, 'h' => $h, 'fit' => 'crop']);
+        $large_image = $this->imgix->buildUrl($path, ['w' => $w, 'h' => $h, 'fit' => 'crop', 'dpr' => '2']);
+        $source = "<source media='(min-width: {$min_width}px)' srcset='{$standard_image} 1x, {$large_image} 2x'></source>";
+        return $source;
+    }
+
+    protected function generate_sources($string)
+    {
+
+        $sizes = explode(',', $string);
+        $sources = [];
+        foreach($sizes as $size) {
+            $query = explode(': ', $size);
+            $min_width = $query[0];
+            preg_match('/\[(.*)\]/', $query[1], $dimensions);
+            $dimension_values = explode('x', $dimensions[1]);
+            $sources[] = $this->generate_source($min_width, $dimension_values[0], $dimension_values[1]);
+        }
+        return implode('', $sources);
+    }
+
+    /**
+     * Custom responsive picture tag
+     * Takes a sizes attribute that will contain data about the viewport
+     * queries that we should produce `<source>` tags for
+     * @return string HTML picture with all the sources
+     */
+    public function responsivePictureTag()
+    {
+
+        $categorized_attrs = $this->categorizedAttributes();
+
+        if (empty($categorized_attrs)) {
+            return null;
+        }
+
+        return join('', array(
+            "<picture>",
+            $this->generate_sources($this->parameters['sizes']),
+            $this->imageTag(),
+            "</picture>"
         ));
     }
 }
