@@ -179,9 +179,17 @@ class ImgixTags extends Tags
 
     protected function generate_source($min_width, $w, $h)
     {
+        $categorized_attrs = $this->categorizedAttributes();
+
+        if (empty($categorized_attrs)) {
+            return null;
+        }
+
+        $categorized_attrs['imgix_attributes'] = array_merge($categorized_attrs['imgix_attributes'], ['w' => $w, 'h' => $h]);
+
         $path = $this->getParam('path');
-        $standard_image = $this->imgix->buildUrl($path, ['w' => $w, 'h' => $h, 'fit' => 'crop']);
-        $large_image = $this->imgix->buildUrl($path, ['w' => $w, 'h' => $h, 'fit' => 'crop', 'dpr' => '2']);
+        $standard_image = $this->imgix->buildUrl($path, $categorized_attrs['imgix_attributes']);
+        $large_image = $this->imgix->buildUrl($path, array_merge($categorized_attrs['imgix_attributes'], ['dpr' => 2]));
         $source = "<source media='(min-width: {$min_width}px)' srcset='{$standard_image} 1x, {$large_image} 2x'></source>";
         return $source;
     }
