@@ -32,7 +32,16 @@ class ImgixTags extends Tags
             'imgix_attributes' => array()
         );
 
+        if(isset($attrs['focalpoint'])) {
+            $fx = explode('-', $attrs['focalpoint'])[0];
+            $fy = explode('-', $attrs['focalpoint'])[1];
+            $categorized_attrs['imgix_attributes']['fp-x'] = "0.{$fx}";
+            $categorized_attrs['imgix_attributes']['fp-y'] = "0.{$fy}";
+        }
+
         unset($attrs['path']);
+        unset($attrs['sizes']);
+        unset($attrs['focalpoint']);
 
         foreach ($attrs as $key => $val) {
             $is_html_attr = in_array($key, self::$html_attributes);
@@ -133,6 +142,38 @@ class ImgixTags extends Tags
                     $this->buildHtmlAttributes($categorized_attrs),
                 '>',
             '</picture>'
+        ));
+    }
+
+    /**
+     * Custom lazy load tag
+     * @return string HTML image element with desired srcset
+     */
+    public function lazyloadmeTag()
+    {
+        $categorized_attrs = $this->categorizedAttributes();
+
+        if (empty($categorized_attrs)) {
+            return null;
+        }
+
+        $placeholder_attrs = [
+            'blur' => '60',
+            'w' => $categorized_attrs['imgix_attributes']['w'] / 10,
+            'h' => $categorized_attrs['imgix_attributes']['h'] / 10
+        ];
+
+        return join('', array(
+            '<img data-lazyloadme ',
+            ' srcset="',
+                $this->imgix->buildSrcset($categorized_attrs['path'], array_merge($categorized_attrs['imgix_attributes'], $placeholder_attrs)),
+            '" data-srcset="',
+                $this->imgix->buildSrcset($categorized_attrs['path'], $categorized_attrs['imgix_attributes']),
+            '" src="',
+                $this->imgix->buildUrl($categorized_attrs['path'], $categorized_attrs['imgix_attributes']),
+            '" ',
+                $this->buildHtmlAttributes($categorized_attrs),
+            '>'
         ));
     }
 
