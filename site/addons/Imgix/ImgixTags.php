@@ -35,8 +35,8 @@ class ImgixTags extends Tags
         if(isset($attrs['focalpoint'])) {
             $fx = explode('-', $attrs['focalpoint'])[0];
             $fy = explode('-', $attrs['focalpoint'])[1];
-            $categorized_attrs['imgix_attributes']['fp-x'] = "0.{$fx}";
-            $categorized_attrs['imgix_attributes']['fp-y'] = "0.{$fy}";
+            $categorized_attrs['imgix_attributes']['fp-x'] = (int)$fx / 100;
+            $categorized_attrs['imgix_attributes']['fp-y'] = (int)$fy / 100;
         }
 
         unset($attrs['path']);
